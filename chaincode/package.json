@@ -1,0 +1,22 @@
+{
+  "name": "degree-cc",
+  "version": "1.0.0",
+  "description": "Chaincode for Degree and Transcript Management System on Hyperledger Fabric",
+  "main": "index.js",
+  "scripts": {
+    "start": "fabric-chaincode-node start",
+    "test": "jest --coverage"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "fabric-contract-api": "^2.5.3",
+    "fabric-shim": "^2.5.3"
+  },
+  "devDependencies": {
+    "jest": "^29.0.0"
+  },
+  "author": "Degree Management System",
+  "license": "Apache-2.0"
+}

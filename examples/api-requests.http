@@ -1,0 +1,1005 @@
+###
+# Hyperledger Fabric Degree Backend API - Example Requests
+# 
+# This file contains example HTTP requests for all API endpoints.
+# You can use this file with REST Client extensions in VS Code or similar tools.
+# 
+# API Endpoints theo thiết kế:
+# - POST /api/degrees - Cấp bằng (Yêu cầu xác thực Admin)
+# - POST /api/transcripts - Nhập bảng điểm (Sử dụng Transient Data)
+# - GET /api/verify/:id - Xác thực công khai (Không yêu cầu đăng nhập)
+# 
+# Authentication Endpoints:
+# - POST /api/auth/register - Đăng ký user mới (Admin only)
+# - POST /api/auth/enroll - Enroll user và nhận X.509 certificate
+# - POST /api/auth/login - Đăng nhập và nhận JWT token
+# - POST /api/auth/logout - Đăng xuất và invalidate token
+# - GET /api/auth/profile - Lấy thông tin profile
+# 
+# Prerequisites:
+# - Backend server must be running (npm start)
+# - Fabric network must be accessible
+# - Default server URL: http://localhost:3000
+###
+
+@baseUrl = http://localhost:3000
+
+# Variables for authentication (update after login)
+@jwtToken = YOUR_JWT_TOKEN_HERE
+@enrollmentSecret = YOUR_ENROLLMENT_SECRET_HERE
+
+###############################################################################
+# Health Check Endpoint
+###############################################################################
+
+### Health Check - Verify server and gateway connection status
+GET {{baseUrl}}/api/health HTTP/1.1
+
+# Expected Response (200 OK):
+# {
+#   "status": "healthy",
+#   "gateway": "connected",
+#   "timestamp": "2024-12-06T10:30:00.000Z"
+# }
+
+
+###############################################################################
+# Authentication Endpoints - User Registration, Enrollment, Login, Logout
+###############################################################################
+
+### AUTH-1. Register New User (Admin Only)
+# Registers a new user with the system. Requires admin credentials.
+# Roles: admin, student, client
+POST {{baseUrl}}/api/auth/register HTTP/1.1
+Content-Type: application/json
+
+{
+  "adminUsername": "admin",
+  "adminPassword": "adminpw",
+  "userData": {
+    "username": "student1",
+    "password": "student123",
+    "role": "student"
+  }
+}
+
+# Expected Response (200 OK):
+# {
+#   "success": true,
+#   "enrollmentId": "student1",
+#   "enrollmentSecret": "abc123def456...",
+#   "message": "User registered successfully. Use enrollment credentials to enroll.",
+#   "timestamp": "2024-12-09T10:00:00.000Z"
+# }
+
+
+### AUTH-2. Register Admin User
+POST {{baseUrl}}/api/auth/register HTTP/1.1
+Content-Type: application/json
+
+{
+  "adminUsername": "admin",
+  "adminPassword": "adminpw",
+  "userData": {
+    "username": "admin1",
+    "password": "admin123",
+    "role": "admin"
+  }
+}
+
+
+### AUTH-3. Register Client User
+POST {{baseUrl}}/api/auth/register HTTP/1.1
+Content-Type: application/json
+
+{
+  "adminUsername": "admin",
+  "adminPassword": "adminpw",
+  "userData": {
+    "username": "client1",
+    "password": "client123",
+    "role": "client"
+  }
+}
+
+
+### AUTH-4. Register User - Invalid Admin Credentials
+# This should return 401 Unauthorized
+POST {{baseUrl}}/api/auth/register HTTP/1.1
+Content-Type: application/json
+
+{
+  "adminUsername": "admin",
+  "adminPassword": "wrongpassword",
+  "userData": {
+    "username": "testuser",
+    "password": "test123",
+    "role": "student"
+  }
+}
+
+# Expected Response (401 Unauthorized):
+# {
+#   "success": false,
+#   "error": "Invalid admin credentials",
+#   "code": "AUTH_INVALID_CREDENTIALS"
+# }
+
+
+### AUTH-5. Register User - Duplicate Username
+# This should return 409 Conflict (run after AUTH-1)
+POST {{baseUrl}}/api/auth/register HTTP/1.1
+Content-Type: application/json
+
+{
+  "adminUsername": "admin",
+  "adminPassword": "adminpw",
+  "userData": {
+    "username": "student1",
+    "password": "different123",
+    "role": "student"
+  }
+}
+
+# Expected Response (409 Conflict):
+# {
+#   "success": false,
+#   "error": "User already exists",
+#   "code": "AUTH_USER_EXISTS"
+# }
+
+
+### AUTH-6. Register User - Invalid Role
+POST {{baseUrl}}/api/auth/register HTTP/1.1
+Content-Type: application/json
+
+{
+  "adminUsername": "admin",
+  "adminPassword": "adminpw",
+  "userData": {
+    "username": "testuser2",
+    "password": "test123",
+    "role": "invalid_role"
+  }
+}
+
+# Expected Response (400 Bad Request):
+# {
+#   "success": false,
+#   "error": "Invalid role. Must be one of: admin, student, client",
+#   "code": "VALIDATION_ERROR"
+# }
+
+
+### AUTH-7. Enroll User
+# Enrolls a registered user and stores X.509 certificate in wallet
+# Use the enrollmentSecret from registration response
+POST {{baseUrl}}/api/auth/enroll HTTP/1.1
+Content-Type: application/json
+
+{
+  "username": "student1",
+  "enrollmentSecret": "{{enrollmentSecret}}"
+}
+
+# Expected Response (200 OK):
+# {
+#   "success": true,
+#   "username": "student1",
+#   "mspId": "Org1MSP",
+#   "ou": "student",
+#   "enrolledAt": "2024-12-09T10:00:00.000Z",
+#   "message": "User enrolled successfully"
+# }
+
+
+### AUTH-8. Enroll User - Invalid Secret
+POST {{baseUrl}}/api/auth/enroll HTTP/1.1
+Content-Type: application/json
+
+{
+  "username": "student1",
+  "enrollmentSecret": "invalid_secret"
+}
+
+# Expected Response (400 Bad Request):
+# {
+#   "success": false,
+#   "error": "Invalid enrollment secret",
+#   "code": "AUTH_INVALID_SECRET"
+# }
+
+
+### AUTH-9. Enroll User - User Not Found
+POST {{baseUrl}}/api/auth/enroll HTTP/1.1
+Content-Type: application/json
+
+{
+  "username": "nonexistent_user",
+  "enrollmentSecret": "some_secret"
+}
+
+# Expected Response (404 Not Found):
+# {
+#   "success": false,
+#   "error": "User not found",
+#   "code": "AUTH_USER_NOT_FOUND"
+# }
+
+
+### AUTH-10. Login User
+# Authenticates user and returns JWT token
+POST {{baseUrl}}/api/auth/login HTTP/1.1
+Content-Type: application/json
+
+{
+  "username": "student1",
+  "password": "student123"
+}
+
+# Expected Response (200 OK):
+# {
+#   "success": true,
+#   "token": "eyJhbGciOiJIUzI1NiIs...",
+#   "user": {
+#     "username": "student1",
+#     "mspId": "Org1MSP",
+#     "ou": "student",
+#     "enrolledAt": "2024-12-09T10:00:00.000Z"
+#   }
+# }
+# 
+# IMPORTANT: Copy the token value and update @jwtToken variable above
+
+
+### AUTH-11. Login Admin User
+POST {{baseUrl}}/api/auth/login HTTP/1.1
+Content-Type: application/json
+
+{
+  "username": "admin1",
+  "password": "admin123"
+}
+
+
+### AUTH-12. Login - Invalid Credentials
+POST {{baseUrl}}/api/auth/login HTTP/1.1
+Content-Type: application/json
+
+{
+  "username": "student1",
+  "password": "wrongpassword"
+}
+
+# Expected Response (401 Unauthorized):
+# {
+#   "success": false,
+#   "error": "Invalid credentials",
+#   "code": "AUTH_INVALID_CREDENTIALS"
+# }
+
+
+### AUTH-13. Login - User Not Enrolled
+# This will fail if user is registered but not enrolled
+POST {{baseUrl}}/api/auth/login HTTP/1.1
+Content-Type: application/json
+
+{
+  "username": "unenrolled_user",
+  "password": "password123"
+}
+
+# Expected Response (401 Unauthorized):
+# {
+#   "success": false,
+#   "error": "User not enrolled. Please enroll first.",
+#   "code": "AUTH_NOT_ENROLLED"
+# }
+
+
+### AUTH-14. Get User Profile
+# Requires valid JWT token in Authorization header
+GET {{baseUrl}}/api/auth/profile HTTP/1.1
+Authorization: Bearer {{jwtToken}}
+
+# Expected Response (200 OK):
+# {
+#   "success": true,
+#   "profile": {
+#     "username": "student1",
+#     "role": "student",
+#     "enrolled": true,
+#     "mspId": "Org1MSP",
+#     "ou": "student",
+#     "certificateInfo": {
+#       "cn": "student1",
+#       "validFrom": "2024-12-09T10:00:00.000Z",
+#       "validTo": "2025-12-09T10:00:00.000Z",
+#       "serialNumber": "abc123..."
+#     },
+#     "createdAt": "2024-12-09T09:00:00.000Z",
+#     "enrolledAt": "2024-12-09T10:00:00.000Z"
+#   }
+# }
+
+
+### AUTH-15. Get Profile - No Token
+GET {{baseUrl}}/api/auth/profile HTTP/1.1
+
+# Expected Response (401 Unauthorized):
+# {
+#   "success": false,
+#   "error": "No token provided",
+#   "code": "AUTH_NO_TOKEN"
+# }
+
+
+### AUTH-16. Get Profile - Invalid Token
+GET {{baseUrl}}/api/auth/profile HTTP/1.1
+Authorization: Bearer invalid_token_here
+
+# Expected Response (401 Unauthorized):
+# {
+#   "success": false,
+#   "error": "Invalid token",
+#   "code": "AUTH_TOKEN_INVALID"
+# }
+
+
+### AUTH-17. Logout User
+# Invalidates the JWT token
+POST {{baseUrl}}/api/auth/logout HTTP/1.1
+Authorization: Bearer {{jwtToken}}
+
+# Expected Response (200 OK):
+# {
+#   "success": true,
+#   "message": "Logged out successfully"
+# }
+
+
+### AUTH-18. Logout - No Token
+POST {{baseUrl}}/api/auth/logout HTTP/1.1
+
+# Expected Response (401 Unauthorized):
+# {
+#   "success": false,
+#   "error": "No token provided",
+#   "code": "AUTH_NO_TOKEN"
+# }
+
+
+###############################################################################
+# Degree Endpoints - Public Data (POST /api/degrees)
+# Theo thiết kế: IssueDegree(ctx, degreeData)
+# AUTHENTICATION REQUIRED: Admin role only (OU=admin)
+###############################################################################
+
+### 1. Issue Degree - Valid Request (Theo thiết kế)
+# Issues a new degree with all required fields
+# REQUIRES: JWT token with OU=admin
+# Data Model: DEGREE_{DegreeID}
+POST {{baseUrl}}/api/degrees HTTP/1.1
+Content-Type: application/json
+Authorization: Bearer {{jwtToken}}
+
+{
+  "degreeId": "VN.KMA.2025.001",
+  "degreeType": "Ky Su",
+  "studentName": "Nguyen Van A",
+  "universityName": "Hoc Vien Ky Thuat Mat Ma",
+  "major": "Cong nghe thong tin",
+  "classification": "Xuat sac",
+  "issueDate": "2025-06-20",
+  "transcriptHash": "a1b2c3d4e5f6g7h8i9j0"
+}
+
+# Expected Response (200 OK):
+# {
+#   "success": true,
+#   "transactionId": "abc123def456...",
+#   "degree": {
+#     "degreeId": "VN.KMA.2025.001",
+#     "degreeType": "Ky Su",
+#     "studentName": "Nguyen Van A",
+#     "universityName": "Hoc Vien Ky Thuat Mat Ma",
+#     "major": "Cong nghe thong tin",
+#     "classification": "Xuat sac",
+#     "issueDate": "2025-06-20",
+#     "transcriptHash": "a1b2c3d4e5f6g7h8i9j0",
+#     "status": "ACTIVE"
+#   }
+# }
+
+
+### 2. Issue Degree - Cu Nhan (Bachelor's Degree)
+# REQUIRES: JWT token with OU=admin
+POST {{baseUrl}}/api/degrees HTTP/1.1
+Content-Type: application/json
+Authorization: Bearer {{jwtToken}}
+
+{
+  "degreeId": "VN.HUST.2025.002",
+  "degreeType": "Cu Nhan",
+  "studentName": "Tran Thi B",
+  "universityName": "Dai hoc Bach Khoa Ha Noi",
+  "major": "Khoa hoc may tinh",
+  "classification": "Gioi",
+  "issueDate": "2025-07-15"
+}
+
+
+### 3. Issue Degree - Thac Si (Master's Degree)
+# REQUIRES: JWT token with OU=admin
+POST {{baseUrl}}/api/degrees HTTP/1.1
+Content-Type: application/json
+Authorization: Bearer {{jwtToken}}
+
+{
+  "degreeId": "VN.VNU.2025.003",
+  "degreeType": "Thac Si",
+  "studentName": "Le Van C",
+  "universityName": "Dai hoc Quoc gia Ha Noi",
+  "major": "Tri tue nhan tao",
+  "classification": "Xuat sac",
+  "issueDate": "2025-08-10"
+}
+
+
+### 4. Issue Degree - Tien Si (PhD)
+# REQUIRES: JWT token with OU=admin
+POST {{baseUrl}}/api/degrees HTTP/1.1
+Content-Type: application/json
+Authorization: Bearer {{jwtToken}}
+
+{
+  "degreeId": "VN.HCMUS.2025.004",
+  "degreeType": "Tien Si",
+  "studentName": "Pham Van D",
+  "universityName": "Dai hoc Khoa hoc Tu nhien TP.HCM",
+  "major": "Vat ly ly thuyet",
+  "classification": "Xuat sac",
+  "issueDate": "2025-09-01"
+}
+
+
+### 5. Issue Degree - Invalid Request (Missing degreeId)
+# This should return 400 Bad Request
+POST {{baseUrl}}/api/degrees HTTP/1.1
+Content-Type: application/json
+Authorization: Bearer {{jwtToken}}
+
+{
+  "degreeType": "Ky Su",
+  "studentName": "Nguyen Van E",
+  "universityName": "Hoc Vien Ky Thuat Mat Ma",
+  "major": "An toan thong tin",
+  "classification": "Kha",
+  "issueDate": "2025-06-20"
+}
+
+# Expected Response (400 Bad Request):
+# {
+#   "success": false,
+#   "error": "Missing required fields: degreeId, degreeType, studentName, universityName, major, classification, issueDate"
+# }
+
+
+### 6. Issue Degree - Invalid Request (Missing major)
+POST {{baseUrl}}/api/degrees HTTP/1.1
+Content-Type: application/json
+Authorization: Bearer {{jwtToken}}
+
+{
+  "degreeId": "VN.KMA.2025.005",
+  "degreeType": "Ky Su",
+  "studentName": "Nguyen Van F",
+  "universityName": "Hoc Vien Ky Thuat Mat Ma",
+  "classification": "Kha",
+  "issueDate": "2025-06-20"
+}
+
+
+### 7. Issue Degree - Invalid Request (Invalid date format)
+POST {{baseUrl}}/api/degrees HTTP/1.1
+Content-Type: application/json
+Authorization: Bearer {{jwtToken}}
+
+{
+  "degreeId": "VN.KMA.2025.006",
+  "degreeType": "Ky Su",
+  "studentName": "Nguyen Van G",
+  "universityName": "Hoc Vien Ky Thuat Mat Ma",
+  "major": "Cong nghe thong tin",
+  "classification": "Kha",
+  "issueDate": "20/06/2025"
+}
+
+# Expected Response (400 Bad Request):
+# {
+#   "success": false,
+#   "error": "issueDate must be in ISO 8601 format (YYYY-MM-DD)"
+# }
+
+
+### 7a. Issue Degree - No Authentication
+# This should return 401 Unauthorized
+POST {{baseUrl}}/api/degrees HTTP/1.1
+Content-Type: application/json
+
+{
+  "degreeId": "VN.KMA.2025.007",
+  "degreeType": "Ky Su",
+  "studentName": "Test User",
+  "universityName": "Test University",
+  "major": "Test Major",
+  "classification": "Kha",
+  "issueDate": "2025-06-20"
+}
+
+# Expected Response (401 Unauthorized):
+# {
+#   "success": false,
+#   "error": "No token provided",
+#   "code": "AUTH_NO_TOKEN"
+# }
+
+
+### 7b. Issue Degree - Forbidden (Student Role)
+# This should return 403 Forbidden when using student token
+# Student role (OU=student) cannot issue degrees
+POST {{baseUrl}}/api/degrees HTTP/1.1
+Content-Type: application/json
+Authorization: Bearer {{jwtToken}}
+
+{
+  "degreeId": "VN.KMA.2025.008",
+  "degreeType": "Ky Su",
+  "studentName": "Test User",
+  "universityName": "Test University",
+  "major": "Test Major",
+  "classification": "Kha",
+  "issueDate": "2025-06-20"
+}
+
+# Expected Response (403 Forbidden) when using student/client token:
+# {
+#   "success": false,
+#   "error": "Access denied. Insufficient permissions.",
+#   "code": "AUTH_FORBIDDEN"
+# }
+
+
+###############################################################################
+# Verify Degree Endpoint - Public Query (GET /api/verify/:id)
+# Theo thiết kế: VerifyDegree(ctx, degreeId)
+# Không yêu cầu đăng nhập - Public verification
+###############################################################################
+
+### 8. Verify Degree - Valid Request (Existing Degree)
+# Query degree that was issued in request #1
+GET {{baseUrl}}/api/verify/VN.KMA.2025.001 HTTP/1.1
+
+# Expected Response (200 OK):
+# {
+#   "success": true,
+#   "verified": true,
+#   "degree": {
+#     "degreeId": "VN.KMA.2025.001",
+#     "degreeType": "Ky Su",
+#     "studentName": "Nguyen Van A",
+#     "universityName": "Hoc Vien Ky Thuat Mat Ma",
+#     "major": "Cong nghe thong tin",
+#     "classification": "Xuat sac",
+#     "issueDate": "2025-06-20",
+#     "status": "ACTIVE"
+#   }
+# }
+
+
+### 9. Verify Degree - Another Valid Request
+GET {{baseUrl}}/api/verify/VN.HUST.2025.002 HTTP/1.1
+
+
+### 10. Verify Degree - Not Found (Non-existing Degree)
+# This should return 404 Not Found
+GET {{baseUrl}}/api/verify/VN.XXX.9999.999 HTTP/1.1
+
+# Expected Response (404 Not Found):
+# {
+#   "success": false,
+#   "error": "Degree with ID VN.XXX.9999.999 not found"
+# }
+
+
+###############################################################################
+# Transcript Endpoints - Private Data (POST /api/transcripts)
+# Theo thiết kế: AddPrivateTranscript(ctx)
+# Sử dụng Transient Data - Lưu vào TranscriptCollection
+# AUTHENTICATION REQUIRED: Admin or Student role (OU=admin or OU=student)
+###############################################################################
+
+### 11. Add Transcript - Valid Request (Theo thiết kế)
+# SECURITY NOTE: Dữ liệu được gửi qua Transient Data
+# Không xuất hiện trong transaction log tại Orderer
+# REQUIRES: JWT token with OU=admin or OU=student
+# Data Model: TRANSCRIPT_{StudentID}
+POST {{baseUrl}}/api/transcripts HTTP/1.1
+Content-Type: application/json
+Authorization: Bearer {{jwtToken}}
+
+{
+  "studentId": "CT070211",
+  "gpa": "3.9",
+  "detailedGrades": {
+    "Lap trinh co ban": "9",
+    "Cau truc du lieu": "8",
+    "Giai tich 1": "8",
+    "Vat ly dai cuong": "9",
+    "Tieng Anh 1": "8"
+  },
+  "personalInfo": {
+    "dateOfBirth": "30-11-2004",
+    "gender": "Nam",
+    "nationality": "Viet Nam",
+    "contactInfo": "demo@gmail.com",
+    "citizenId": "012345678910"
+  }
+}
+
+# Expected Response (200 OK):
+# {
+#   "success": true,
+#   "transactionId": "def456ghi789...",
+#   "message": "Transcript added to Private Data Collection successfully"
+# }
+
+
+### 12. Add Transcript - Another Student
+# REQUIRES: JWT token with OU=admin or OU=student
+POST {{baseUrl}}/api/transcripts HTTP/1.1
+Content-Type: application/json
+Authorization: Bearer {{jwtToken}}
+
+{
+  "studentId": "CT070212",
+  "gpa": "3.5",
+  "detailedGrades": {
+    "Lap trinh huong doi tuong": "8",
+    "Co so du lieu": "7",
+    "Mang may tinh": "8",
+    "Toan roi rac": "9",
+    "Tieng Anh 2": "7"
+  },
+  "personalInfo": {
+    "dateOfBirth": "15-05-2003",
+    "gender": "Nu",
+    "nationality": "Viet Nam",
+    "contactInfo": "student2@gmail.com",
+    "citizenId": "098765432101"
+  }
+}
+
+
+### 13. Add Transcript - Without Personal Info (Optional field)
+# REQUIRES: JWT token with OU=admin or OU=student
+POST {{baseUrl}}/api/transcripts HTTP/1.1
+Content-Type: application/json
+Authorization: Bearer {{jwtToken}}
+
+{
+  "studentId": "CT070213",
+  "gpa": "3.2",
+  "detailedGrades": {
+    "An toan thong tin": "8",
+    "Mat ma hoc": "9",
+    "He dieu hanh": "7",
+    "Ky thuat lap trinh": "8"
+  }
+}
+
+
+### 14. Add Transcript - Invalid Request (Missing studentId)
+# This should return 400 Bad Request
+POST {{baseUrl}}/api/transcripts HTTP/1.1
+Content-Type: application/json
+Authorization: Bearer {{jwtToken}}
+
+{
+  "gpa": "3.75",
+  "detailedGrades": {
+    "mon1": "8",
+    "mon2": "9"
+  }
+}
+
+# Expected Response (400 Bad Request):
+# {
+#   "success": false,
+#   "error": "Missing required field: studentId"
+# }
+
+
+### 15. Add Transcript - Invalid Request (Missing detailedGrades)
+POST {{baseUrl}}/api/transcripts HTTP/1.1
+Content-Type: application/json
+Authorization: Bearer {{jwtToken}}
+
+{
+  "studentId": "CT070214",
+  "gpa": "3.75"
+}
+
+# Expected Response (400 Bad Request):
+# {
+#   "success": false,
+#   "error": "Missing required field: detailedGrades"
+# }
+
+
+### 16. Add Transcript - Invalid Request (Missing gpa)
+POST {{baseUrl}}/api/transcripts HTTP/1.1
+Content-Type: application/json
+Authorization: Bearer {{jwtToken}}
+
+{
+  "studentId": "CT070215",
+  "detailedGrades": {
+    "mon1": "8",
+    "mon2": "9"
+  }
+}
+
+# Expected Response (400 Bad Request):
+# {
+#   "success": false,
+#   "error": "Missing required field: gpa"
+# }
+
+
+### 17. Add Transcript - Invalid Request (Invalid GPA value > 4.0)
+POST {{baseUrl}}/api/transcripts HTTP/1.1
+Content-Type: application/json
+Authorization: Bearer {{jwtToken}}
+
+{
+  "studentId": "CT070216",
+  "gpa": "5.0",
+  "detailedGrades": {
+    "mon1": "8",
+    "mon2": "9"
+  }
+}
+
+# Expected Response (400 Bad Request):
+# {
+#   "success": false,
+#   "error": "gpa must be a valid number between 0.0 and 4.0"
+# }
+
+
+### 18. Add Transcript - Invalid Request (detailedGrades is not an object)
+POST {{baseUrl}}/api/transcripts HTTP/1.1
+Content-Type: application/json
+Authorization: Bearer {{jwtToken}}
+
+{
+  "studentId": "CT070217",
+  "gpa": "3.75",
+  "detailedGrades": "invalid string"
+}
+
+# Expected Response (400 Bad Request):
+# {
+#   "success": false,
+#   "error": "detailedGrades must be a valid JSON object"
+# }
+
+
+### 19. Add Transcript - Empty studentId
+POST {{baseUrl}}/api/transcripts HTTP/1.1
+Content-Type: application/json
+Authorization: Bearer {{jwtToken}}
+
+{
+  "studentId": "",
+  "gpa": "3.75",
+  "detailedGrades": {
+    "mon1": "8"
+  }
+}
+
+# Expected Response (400 Bad Request):
+# {
+#   "success": false,
+#   "error": "studentId is required and must be a non-empty string"
+# }
+
+
+### 19a. Add Transcript - No Authentication
+# This should return 401 Unauthorized
+POST {{baseUrl}}/api/transcripts HTTP/1.1
+Content-Type: application/json
+
+{
+  "studentId": "CT070218",
+  "gpa": "3.75",
+  "detailedGrades": {
+    "mon1": "8"
+  }
+}
+
+# Expected Response (401 Unauthorized):
+# {
+#   "success": false,
+#   "error": "No token provided",
+#   "code": "AUTH_NO_TOKEN"
+# }
+
+
+### 19b. Add Transcript - Forbidden (Client Role)
+# This should return 403 Forbidden when using client token
+# Client role (OU=client) cannot add transcripts
+POST {{baseUrl}}/api/transcripts HTTP/1.1
+Content-Type: application/json
+Authorization: Bearer {{jwtToken}}
+
+{
+  "studentId": "CT070219",
+  "gpa": "3.75",
+  "detailedGrades": {
+    "mon1": "8"
+  }
+}
+
+# Expected Response (403 Forbidden) when using client token:
+# {
+#   "success": false,
+#   "error": "Access denied. Insufficient permissions.",
+#   "code": "AUTH_FORBIDDEN"
+# }
+
+
+###############################################################################
+# Edge Cases and Error Scenarios
+###############################################################################
+
+### 20. Issue Degree - Duplicate degreeId (Conflict)
+# Try to issue a degree with an ID that already exists
+# REQUIRES: JWT token with OU=admin
+POST {{baseUrl}}/api/degrees HTTP/1.1
+Content-Type: application/json
+Authorization: Bearer {{jwtToken}}
+
+{
+  "degreeId": "VN.KMA.2025.001",
+  "degreeType": "Cu Nhan",
+  "studentName": "Duplicate Test",
+  "universityName": "Test University",
+  "major": "Test Major",
+  "classification": "Kha",
+  "issueDate": "2025-12-06"
+}
+
+# Expected Response (409 Conflict or 500 depending on chaincode):
+# {
+#   "success": false,
+#   "error": "Transaction conflict detected. Please retry the operation."
+# }
+
+
+### 21. Verify Degree - Empty degreeId
+GET {{baseUrl}}/api/verify/ HTTP/1.1
+
+# Expected Response (404 Not Found - route not matched)
+
+
+###############################################################################
+# Notes
+###############################################################################
+
+# AUTHENTICATION NOTES:
+#
+# 1. Authentication Flow:
+#    Step 1: Register user (Admin only) - POST /api/auth/register
+#    Step 2: Enroll user - POST /api/auth/enroll
+#    Step 3: Login - POST /api/auth/login (returns JWT token)
+#    Step 4: Use JWT token in Authorization header for protected endpoints
+#
+# 2. ABAC (Attribute-Based Access Control):
+#    - OU=admin: Can access all endpoints (degrees, transcripts, verify)
+#    - OU=student: Can access transcripts and verify endpoints
+#    - OU=client: Can only access verify endpoint (public)
+#    - No auth: Can only access verify endpoint (public)
+#
+# 3. JWT Token Usage:
+#    - Add header: Authorization: Bearer <token>
+#    - Token expires after 24 hours (configurable)
+#    - Token contains: username, mspId, ou (role)
+#
+# 4. Rate Limiting:
+#    - Login endpoint: 5 attempts per 15 minutes per IP
+#    - Returns 429 Too Many Requests when exceeded
+#
+# SECURITY NOTES (Theo thiết kế):
+# 
+# 1. Transient Data Mechanism:
+#    - POST /api/transcripts sử dụng Transient Data để bảo vệ thông tin nhạy cảm
+#    - Dữ liệu được gửi qua putTransient() method
+#    - KHÔNG xuất hiện trong transaction log tại Orderer
+#    - Chỉ HASH của private data được ghi vào public ledger
+#    - Dữ liệu thực được lưu trong Private Data Collections (TranscriptCollection)
+# 
+# 2. Public vs Private Data:
+#    - Degree information (POST /api/degrees) là PUBLIC - lưu trên World State
+#    - Transcript information (POST /api/transcripts) là PRIVATE - lưu trong SideDB
+# 
+# 3. Data Models (Theo thiết kế):
+#    - Degree: KEY = DEGREE_{DegreeID}
+#      Value: { docType, degreeId, degreeType, studentName, universityName, 
+#               major, classification, issueDate, issuerMSP, status, transcriptHash }
+#    - Transcript: KEY = TRANSCRIPT_{StudentID}
+#      Value: { studentId, gpa, detailedGrades, personalInfo }
+# 
+# 4. API Endpoints (Theo thiết kế):
+#    - POST /api/degrees - Cấp bằng (Admin only - OU=admin)
+#    - POST /api/transcripts - Nhập bảng điểm (Admin/Student - OU=admin or OU=student)
+#    - GET /api/verify/:id - Xác thực công khai (No auth required)
+#
+# 5. Authentication Endpoints:
+#    - POST /api/auth/register - Đăng ký user (Admin credentials required)
+#    - POST /api/auth/enroll - Enroll user (Enrollment secret required)
+#    - POST /api/auth/login - Đăng nhập (Rate limited)
+#    - POST /api/auth/logout - Đăng xuất (JWT required)
+#    - GET /api/auth/profile - Lấy profile (JWT required)
+
+###############################################################################
+# cURL Examples
+###############################################################################
+
+# Health Check
+# curl http://localhost:3000/api/health
+
+# ==================== AUTHENTICATION ====================
+
+# Register User (Admin only)
+# curl -X POST http://localhost:3000/api/auth/register \
+#   -H "Content-Type: application/json" \
+#   -d '{"adminUsername":"admin","adminPassword":"adminpw","userData":{"username":"student1","password":"student123","role":"student"}}'
+
+# Enroll User
+# curl -X POST http://localhost:3000/api/auth/enroll \
+#   -H "Content-Type: application/json" \
+#   -d '{"username":"student1","enrollmentSecret":"YOUR_ENROLLMENT_SECRET"}'
+
+# Login
+# curl -X POST http://localhost:3000/api/auth/login \
+#   -H "Content-Type: application/json" \
+#   -d '{"username":"student1","password":"student123"}'
+
+# Get Profile (with JWT token)
+# curl http://localhost:3000/api/auth/profile \
+#   -H "Authorization: Bearer YOUR_JWT_TOKEN"
+
+# Logout (with JWT token)
+# curl -X POST http://localhost:3000/api/auth/logout \
+#   -H "Authorization: Bearer YOUR_JWT_TOKEN"
+
+# ==================== PROTECTED ENDPOINTS ====================
+
+# Issue Degree (Admin only - requires JWT with OU=admin)
+# curl -X POST http://localhost:3000/api/degrees \
+#   -H "Content-Type: application/json" \
+#   -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+#   -d '{"degreeId":"VN.KMA.2025.001","degreeType":"Ky Su","studentName":"Nguyen Van A","universityName":"Hoc Vien Ky Thuat Mat Ma","major":"Cong nghe thong tin","classification":"Xuat sac","issueDate":"2025-06-20"}'
+
+# Add Transcript (Admin/Student - requires JWT with OU=admin or OU=student)
+# curl -X POST http://localhost:3000/api/transcripts \
+#   -H "Content-Type: application/json" \
+#   -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+#   -d '{"studentId":"CT070211","gpa":"3.9","detailedGrades":{"mon1":"8","mon2":"9"},"personalInfo":{"dateOfBirth":"30-11-2004","gender":"Nam"}}'
+
+# ==================== PUBLIC ENDPOINTS ====================
+
+# Verify Degree (Public - no auth required)
+# curl http://localhost:3000/api/verify/VN.KMA.2025.001

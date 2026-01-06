@@ -1,0 +1,24 @@
+{
+  "studentId": "CT070211",
+  "gpa": "3.67",
+  "detailedGrades": {
+    "Lập trình căn bản": "9",
+    "Cấu trúc dữ liệu và giải thuật": "8.5",
+    "Giải tích 1": "9",
+    "Đại số tuyến tính": "9",
+    "Cơ sở dữ liệu": "9",
+    "Mạng máy tính": "8.5",
+    "Hệ điều hành": "9",
+    "Công nghệ Web": "9",
+    "An toàn thông tin": "9",
+    "Blockchain và ứng dụng": "9"
+  },
+  "personalInfo": {
+    "fullName": "Nguyễn Văn A",
+    "dateOfBirth": "2000-01-15",
+    "class": "K16",
+    "faculty": "Công nghệ thông tin",
+    "email": "nguyenvana@example.com",
+    "phone": "0123456789"
+  }
+}
