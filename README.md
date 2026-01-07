@@ -3,14 +3,11 @@
 [![Node.js](https://img.shields.io/badge/Node.js-18.0%2B-green.svg)](https://nodejs.org/)
 [![Hyperledger Fabric](https://img.shields.io/badge/Fabric-2.5%2B%20%7C%203.x-blue.svg)](https://www.hyperledger.org/use/fabric)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-blue.svg)](https://www.postgresql.org/)
-[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
-Backend API Server cho hệ thống quản lý cấp bằng số và bảng điểm sinh viên sử dụng Hyperledger Fabric blockchain và Neon PostgreSQL cloud database.
+Backend API Server cho hệ thống cấp bằng số và hồ sơ sinh viên sử dụng Hyperledger Fabric blockchain và Neon PostgreSQL cloud database.
 
 ## 📋 Mục Lục
 
-- [Tổng Quan](#-tổng-quan)
-- [Tính Năng](#-tính-năng)
 - [Kiến Trúc](#-kiến-trúc)
 - [Công Nghệ](#-công-nghệ)
 - [Yêu Cầu Hệ Thống](#-yêu-cầu-hệ-thống)
@@ -23,49 +20,6 @@ Backend API Server cho hệ thống quản lý cấp bằng số và bảng đi�
 - [Deployment](#-deployment)
 - [Troubleshooting](#-troubleshooting)
 - [Contributing](#-contributing)
-- [License](#-license)
-
-## 🎯 Tổng Quan
-
-Hệ thống quản lý cấp bằng số và bảng điểm sinh viên sử dụng Hyperledger Fabric blockchain để đảm bảo tính bảo mật, minh bạch và không thể thay đổi dữ liệu. Backend API cung cấp RESTful endpoints để:
-
-- **Quản lý người dùng**: Đăng ký, đăng nhập, enrollment với Fabric CA
-- **Cấp bằng số**: Issue và verify digital degrees
-- **Quản lý bảng điểm**: Thêm, cập nhật và truy vấn transcript (private data)
-- **Phân quyền**: Role-based và attribute-based access control
-
-## ✨ Tính Năng
-
-### 🔐 Authentication & Authorization
-
-- **User Registration**: Đăng ký tài khoản với bcrypt password hashing
-- **Fabric CA Enrollment**: Tự động enroll user vào Fabric network
-- **JWT Authentication**: Stateless authentication với JSON Web Tokens
-- **Role-Based Access Control (RBAC)**: Admin, Student, University roles
-- **Attribute-Based Access Control (ABAC)**: Dựa trên X.509 certificate OU attributes
-
-### 📜 Degree Management
-
-- **Issue Degree**: Cấp bằng số với thông tin công khai trên blockchain
-- **Verify Degree**: Tra cứu và xác thực bằng cấp
-- **Query All Degrees**: Lấy danh sách tất cả bằng cấp
-- **Immutable Records**: Dữ liệu bằng cấp không thể thay đổi
-
-### 📊 Transcript Management (Private Data)
-
-- **Add/Update Transcript**: Thêm bảng điểm với transient data mechanism
-- **Query Transcript**: Tra cứu bảng điểm (chỉ người được phân quyền)
-- **Private Data Collections**: Dữ liệu nhạy cảm không lưu trên public ledger
-- **Grant Access**: Cấp quyền truy cập bảng điểm cho bên thứ ba
-
-### 🔒 Security Features
-
-- **TLS/SSL Encryption**: Mọi kết nối đều được mã hóa
-- **Certificate-based Authentication**: Sử dụng X.509 certificates
-- **Transient Data**: Dữ liệu nhạy cảm không qua orderer
-- **Rate Limiting**: Giới hạn số request để chống DoS
-- **SQL Injection Prevention**: Parameterized queries
-- **CORS Protection**: Configurable CORS policy
 
 ## 🏗️ Kiến Trúc
 
@@ -874,23 +828,6 @@ LOG_LEVEL=debug
 LOG_QUERIES=true
 ```
 
-### Getting Help
-
-1. Check documentation in `Document/` folder
-2. Review error logs
-3. Test individual components
-4. Check Fabric network logs
-5. Verify database connectivity
-
-## 📚 Documentation
-
-- **API Documentation**: [Document/API_DOCUMENTATION.md](Document/API_DOCUMENTATION.md)
-- **Fabric Setup**: [Document/HUONG_DAN_CAI_DAT_FABRIC.md](Document/HUONG_DAN_CAI_DAT_FABRIC.md)
-- **Database Guide**: [database/README.md](database/README.md)
-- **Neon Setup**: [database/NEON_SETUP.md](database/NEON_SETUP.md)
-- **Testing Guide**: [Document/POSTMAN_TEST_GUIDE.md](Document/POSTMAN_TEST_GUIDE.md)
-- **Migration Summary**: [database/NEON_MIGRATION_COMPLETE.md](database/NEON_MIGRATION_COMPLETE.md)
-
 ## 🤝 Contributing
 
 Contributions are welcome! Please follow these steps:
@@ -908,28 +845,3 @@ Contributions are welcome! Please follow these steps:
 - Update documentation
 - Use meaningful commit messages
 
-## 📄 License
-
-This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
-
-## 👥 Authors
-
-- **Your Name** - Initial work
-
-## 🙏 Acknowledgments
-
-- Hyperledger Fabric community
-- Neon PostgreSQL team
-- Express.js contributors
-- All open-source contributors
-
-## 📞 Support
-
-For support and questions:
-- Create an issue on GitHub
-- Contact: your-email@example.com
-- Documentation: [Document/](Document/)
-
----
-
-**Built with ❤️ using Hyperledger Fabric, Node.js, and Neon PostgreSQL**
