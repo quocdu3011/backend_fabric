@@ -56,6 +56,9 @@ class DegreeContract extends Contract {
     async IssueDegree(ctx, degreeId, studentId, degreeType, studentName, university, major, classification, issueDate, transcriptHash) {
         console.log('============= START : Issue Degree ===========');
         
+        // AUTHORIZATION: Only admin can issue degrees
+        this._requireAdmin(ctx);
+        
         // Check if degree already exists
         const exists = await this.DegreeExists(ctx, degreeId);
         if (exists) {
@@ -98,6 +101,9 @@ class DegreeContract extends Contract {
      */
     async RevokeDegree(ctx, degreeId, reason) {
         console.log('============= START : Revoke Degree ===========');
+
+        // AUTHORIZATION: Only admin can revoke degrees
+        this._requireAdmin(ctx);
 
         const degreeBytes = await ctx.stub.getState(degreeId);
         if (!degreeBytes || degreeBytes.length === 0) {
@@ -260,6 +266,9 @@ class DegreeContract extends Contract {
     async UpdateTranscript(ctx, studentId) {
         console.log('============= START : Update Transcript ===========');
         
+        // AUTHORIZATION: Only admin can update transcripts
+        this._requireAdmin(ctx);
+        
         // ============================================================
         // CRITICAL: Get sensitive data from Transient Data
         // Transient Data will NOT be written to transaction log at Orderer
@@ -379,9 +388,31 @@ class DegreeContract extends Contract {
     async QueryTranscript(ctx, studentId) {
         console.log('============= START : Query Transcript ===========');
         
-        // Check access control
-        const clientMSP = ctx.clientIdentity.getMSPID();
-        console.log(`Query from MSP: ${clientMSP}`);
+        // AUTHORIZATION: Check role-based access
+        const clientIdentity = ctx.clientIdentity;
+        const ou = clientIdentity.getAttributeValue('ou');
+        const clientMSP = clientIdentity.getMSPID();
+        
+        console.log(`Query from MSP: ${clientMSP}, Role: ${ou}`);
+        
+        // Admin can view any transcript
+        // Student can only view their own transcript
+        if (ou === 'student') {
+            // Get student's username from certificate
+            const username = clientIdentity.getAttributeValue('username');
+            if (username !== studentId) {
+                throw new Error(
+                    `Access denied. Students can only view their own transcript. ` +
+                    `Requested: ${studentId}, Caller: ${username}`
+                );
+            }
+        } else if (ou !== 'admin') {
+            // Only admin and student roles can query transcripts
+            throw new Error(
+                `Access denied. Only admin or student can query transcripts. ` +
+                `Caller role: ${ou || 'unknown'}`
+            );
+        }
 
         // Get private data
         const transcriptBytes = await ctx.stub.getPrivateData(
@@ -413,8 +444,25 @@ class DegreeContract extends Contract {
     async GrantAccess(ctx, studentId, targetMSP) {
         console.log('============= START : Grant Access ===========');
         
-        // Verify caller is the student (or admin)
-        // In a real app, we would check if ctx.clientIdentity.getAttributeValue('studentId') === studentId
+        // AUTHORIZATION: Only student can grant access to their own data
+        const clientIdentity = ctx.clientIdentity;
+        const ou = clientIdentity.getAttributeValue('ou');
+        
+        if (ou !== 'student') {
+            throw new Error(
+                `Access denied. Only students can grant access to transcripts. ` +
+                `Caller role: ${ou || 'unknown'}`
+            );
+        }
+        
+        // Verify caller is granting access to their own transcript
+        const username = clientIdentity.getAttributeValue('username');
+        if (username !== studentId) {
+            throw new Error(
+                `Access denied. Students can only grant access to their own transcript. ` +
+                `Requested: ${studentId}, Caller: ${username}`
+            );
+        }
         
         const grantRecord = {
             studentId: studentId,
@@ -443,6 +491,51 @@ class DegreeContract extends Contract {
         const timestamp = ctx.stub.getTxTimestamp();
         const milliseconds = (timestamp.seconds.low || timestamp.seconds) * 1000;
         return new Date(milliseconds).toISOString();
+    }
+
+    /**
+     * Check if the caller has the required role (OU attribute)
+     * @param {Context} ctx - Transaction context
+     * @param {string} requiredRole - Required role (admin, student, client)
+     * @throws {Error} If caller doesn't have the required role
+     * @private
+     */
+    _checkRole(ctx, requiredRole) {
+        const clientIdentity = ctx.clientIdentity;
+        
+        // Get OU (Organizational Unit) attribute from client certificate
+        // OU is set during enrollment and indicates user's role
+        const ou = clientIdentity.getAttributeValue('ou');
+        
+        if (!ou || ou !== requiredRole) {
+            const mspId = clientIdentity.getMSPID();
+            const actualRole = ou || 'unknown';
+            throw new Error(
+                `Access denied. Required role: ${requiredRole}, actual role: ${actualRole} (MSP: ${mspId})`
+            );
+        }
+        
+        console.log(`Access granted: User has required role '${requiredRole}'`);
+    }
+
+    /**
+     * Check if the caller is an admin
+     * @param {Context} ctx - Transaction context
+     * @throws {Error} If caller is not an admin
+     * @private
+     */
+    _requireAdmin(ctx) {
+        this._checkRole(ctx, 'admin');
+    }
+
+    /**
+     * Check if the caller is a student
+     * @param {Context} ctx - Transaction context
+     * @throws {Error} If caller is not a student
+     * @private
+     */
+    _requireStudent(ctx) {
+        this._checkRole(ctx, 'student');
     }
 }
 
