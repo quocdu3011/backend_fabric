@@ -141,6 +141,32 @@ class DegreeContract extends Contract {
     async QueryDegreesByStudent(ctx, studentId) {
         console.log('============= START : Query Degrees By Student ===========');
         
+        // AUTHORIZATION: Student can only query their own degrees
+        const clientIdentity = ctx.clientIdentity;
+        const ou = clientIdentity.getAttributeValue('ou');
+        const roleAttr = clientIdentity.getAttributeValue('role');
+        
+        // Check if caller is a student (OU=student)
+        const isStudent = ou === 'student' || roleAttr === 'student';
+        const isAdmin = ou === 'admin' || roleAttr === 'admin';
+        
+        if (isStudent) {
+            // Students can only query their own degrees
+            const username = clientIdentity.getAttributeValue('studentId') || 
+                           clientIdentity.getAttributeValue('username');
+            if (username && username !== studentId) {
+                throw new Error(
+                    `Access denied. Students can only query their own degrees. ` +
+                    `Requested: ${studentId}, Caller: ${username}`
+                );
+            }
+        } else if (!isAdmin) {
+            throw new Error(
+                `Access denied. Only admin or student can query degrees. ` +
+                `Caller OU: ${ou || 'unknown'}, role: ${roleAttr || 'unknown'}`
+            );
+        }
+        
         const queryString = {
             selector: {
                 docType: 'degree',
@@ -210,12 +236,16 @@ class DegreeContract extends Contract {
     /**
      * Query all degrees
      * Returns all records with docType === 'degree'
+     * Only admin can query all degrees
      * 
      * @param {Context} ctx - Transaction context
      * @returns {string} JSON array of all degree records
      */
     async QueryAllDegrees(ctx) {
         console.log('============= START : Query All Degrees ===========');
+        
+        // AUTHORIZATION: Only admin can query all degrees
+        this._requireAdmin(ctx);
         
         const allResults = [];
         
@@ -391,26 +421,32 @@ class DegreeContract extends Contract {
         // AUTHORIZATION: Check role-based access
         const clientIdentity = ctx.clientIdentity;
         const ou = clientIdentity.getAttributeValue('ou');
+        const roleAttr = clientIdentity.getAttributeValue('role');
         const clientMSP = clientIdentity.getMSPID();
         
-        console.log(`Query from MSP: ${clientMSP}, Role: ${ou}`);
+        console.log(`Query from MSP: ${clientMSP}, OU: ${ou}, Role: ${roleAttr}`);
+        
+        // Check if caller is a student (OU=student)
+        const isStudent = ou === 'student' || roleAttr === 'student';
+        const isAdmin = ou === 'admin' || roleAttr === 'admin';
         
         // Admin can view any transcript
         // Student can only view their own transcript
-        if (ou === 'student') {
+        if (isStudent) {
             // Get student's username from certificate
-            const username = clientIdentity.getAttributeValue('username');
-            if (username !== studentId) {
+            const username = clientIdentity.getAttributeValue('studentId') || 
+                           clientIdentity.getAttributeValue('username');
+            if (username && username !== studentId) {
                 throw new Error(
                     `Access denied. Students can only view their own transcript. ` +
                     `Requested: ${studentId}, Caller: ${username}`
                 );
             }
-        } else if (ou !== 'admin') {
+        } else if (!isAdmin) {
             // Only admin and student roles can query transcripts
             throw new Error(
                 `Access denied. Only admin or student can query transcripts. ` +
-                `Caller role: ${ou || 'unknown'}`
+                `Caller OU: ${ou || 'unknown'}, role: ${roleAttr || 'unknown'}`
             );
         }
 
@@ -447,17 +483,22 @@ class DegreeContract extends Contract {
         // AUTHORIZATION: Only student can grant access to their own data
         const clientIdentity = ctx.clientIdentity;
         const ou = clientIdentity.getAttributeValue('ou');
+        const roleAttr = clientIdentity.getAttributeValue('role');
         
-        if (ou !== 'student') {
+        // Check if caller is a student (OU=student)
+        const isStudent = ou === 'student' || roleAttr === 'student';
+        
+        if (!isStudent) {
             throw new Error(
                 `Access denied. Only students can grant access to transcripts. ` +
-                `Caller role: ${ou || 'unknown'}`
+                `Caller OU: ${ou || 'unknown'}, role: ${roleAttr || 'unknown'}`
             );
         }
         
         // Verify caller is granting access to their own transcript
-        const username = clientIdentity.getAttributeValue('username');
-        if (username !== studentId) {
+        const username = clientIdentity.getAttributeValue('studentId') || 
+                        clientIdentity.getAttributeValue('username');
+        if (username && username !== studentId) {
             throw new Error(
                 `Access denied. Students can only grant access to their own transcript. ` +
                 `Requested: ${studentId}, Caller: ${username}`
@@ -495,8 +536,13 @@ class DegreeContract extends Contract {
 
     /**
      * Check if the caller has the required role (OU attribute)
+     * 
+     * Role mapping:
+     * - 'admin' -> OU=admin (can issue/revoke degrees, update transcripts)
+     * - 'student' -> OU=student (can view own degrees/transcripts)
+     * 
      * @param {Context} ctx - Transaction context
-     * @param {string} requiredRole - Required role (admin, student, client)
+     * @param {string} requiredRole - Required role (admin, student)
      * @throws {Error} If caller doesn't have the required role
      * @private
      */
@@ -507,15 +553,25 @@ class DegreeContract extends Contract {
         // OU is set during enrollment and indicates user's role
         const ou = clientIdentity.getAttributeValue('ou');
         
-        if (!ou || ou !== requiredRole) {
+        // Also check 'role' attribute as fallback
+        const roleAttr = clientIdentity.getAttributeValue('role');
+        
+        // Check if OU matches directly
+        // Admin: OU=admin, Student: OU=student
+        const ouMatches = ou === requiredRole;
+        
+        // Also allow if role attribute matches the required role
+        const roleMatches = roleAttr === requiredRole;
+        
+        if (!ouMatches && !roleMatches) {
             const mspId = clientIdentity.getMSPID();
-            const actualRole = ou || 'unknown';
+            const actualRole = ou || roleAttr || 'unknown';
             throw new Error(
-                `Access denied. Required role: ${requiredRole}, actual role: ${actualRole} (MSP: ${mspId})`
+                `Access denied. Required role: ${requiredRole}, actual OU: ${actualRole} (MSP: ${mspId})`
             );
         }
         
-        console.log(`Access granted: User has required role '${requiredRole}'`);
+        console.log(`Access granted: User has required role '${requiredRole}' (OU=${ou}, role=${roleAttr})`);
     }
 
     /**
@@ -529,7 +585,7 @@ class DegreeContract extends Contract {
     }
 
     /**
-     * Check if the caller is a student
+     * Check if the caller is a student (OU=student)
      * @param {Context} ctx - Transaction context
      * @throws {Error} If caller is not a student
      * @private

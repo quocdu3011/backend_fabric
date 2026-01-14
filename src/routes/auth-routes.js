@@ -491,4 +491,64 @@ router.get('/profile', authMiddleware, async (req, res) => {
   }
 });
 
+/**
+ * POST /api/auth/refresh
+ * 
+ * Refresh access token using refresh token.
+ * 
+ * Request Body:
+ * {
+ *   "refreshToken": "eyJhbGciOiJIUzI1NiIs..."
+ * }
+ * 
+ * Success Response (200):
+ * {
+ *   "success": true,
+ *   "accessToken": "eyJhbGciOiJIUzI1NiIs...",
+ *   "refreshToken": "eyJhbGciOiJIUzI1NiIs..."
+ * }
+ */
+router.post('/refresh', async (req, res) => {
+  try {
+    const { refreshToken } = req.body;
+
+    if (!refreshToken) {
+      return res.status(400).json({
+        success: false,
+        error: 'Refresh token is required',
+        code: 'VALIDATION_ERROR',
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // Call AuthService to refresh token
+    const authService = getAuthService();
+    const result = await authService.refreshToken(refreshToken);
+
+    return res.status(200).json({
+      ...result,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('Error in POST /api/auth/refresh:', error.message);
+
+    if (error.name === 'TokenExpiredError') {
+      return res.status(401).json({
+        success: false,
+        error: 'Refresh token expired. Please login again.',
+        code: 'AUTH_REFRESH_EXPIRED',
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    return res.status(401).json({
+      success: false,
+      error: 'Invalid refresh token',
+      code: 'AUTH_INVALID_TOKEN',
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 module.exports = router;

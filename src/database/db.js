@@ -2,6 +2,7 @@
  * PostgreSQL Database Connection Pool
  * 
  * Provides connection pool management for PostgreSQL database
+ * Optimized for serverless databases like Neon
  */
 
 const { Pool } = require('pg');
@@ -26,7 +27,10 @@ function getPool() {
       connectionTimeoutMillis: dbConfig.connectionTimeoutMillis,
       query_timeout: dbConfig.query_timeout,
       statement_timeout: dbConfig.statement_timeout,
-      ssl: dbConfig.ssl || { rejectUnauthorized: true }
+      ssl: dbConfig.ssl || { rejectUnauthorized: false },
+      // Keep connections alive for serverless databases
+      keepAlive: true,
+      keepAliveInitialDelayMillis: 10000
     } : {
       host: dbConfig.host,
       port: dbConfig.port,
@@ -39,15 +43,18 @@ function getPool() {
       connectionTimeoutMillis: dbConfig.connectionTimeoutMillis,
       query_timeout: dbConfig.query_timeout,
       statement_timeout: dbConfig.statement_timeout,
-      ssl: dbConfig.ssl
+      ssl: dbConfig.ssl,
+      keepAlive: true,
+      keepAliveInitialDelayMillis: 10000
     };
     
     pool = new Pool(poolConfig);
 
-    // Handle pool errors
+    // Handle pool errors - don't exit process, just recreate pool
     pool.on('error', (err, client) => {
-      console.error('Unexpected error on idle client', err);
-      process.exit(-1);
+      console.error('Unexpected error on idle client:', err.message);
+      // Mark pool as null to force recreation on next query
+      pool = null;
     });
 
     // Handle pool connection
@@ -71,28 +78,54 @@ function getPool() {
 
 /**
  * Execute a query with parameters
+ * Includes automatic retry for connection errors
  * @param {string} text - SQL query
  * @param {Array} params - Query parameters
  * @returns {Promise<Object>} Query result
  */
 async function query(text, params) {
   const start = Date.now();
-  const pool = getPool();
+  let currentPool = getPool();
+  let retries = 2;
   
-  try {
-    const res = await pool.query(text, params);
-    const duration = Date.now() - start;
-    
-    if (process.env.LOG_QUERIES === 'true') {
-      console.log('Executed query', { text, duration, rows: res.rowCount });
+  while (retries > 0) {
+    try {
+      const res = await currentPool.query(text, params);
+      const duration = Date.now() - start;
+      
+      if (process.env.LOG_QUERIES === 'true') {
+        console.log('Executed query', { text, duration, rows: res.rowCount });
+      }
+      
+      return res;
+    } catch (error) {
+      // Check if it's a connection error that might be recoverable
+      if (error.message.includes('Connection terminated') || 
+          error.message.includes('connection refused') ||
+          error.message.includes('timeout') ||
+          error.code === 'ECONNRESET') {
+        retries--;
+        console.warn(`Database connection error, retrying... (${retries} retries left)`);
+        
+        // Force pool recreation
+        pool = null;
+        currentPool = getPool();
+        
+        if (retries === 0) {
+          console.error('Database query failed after retries:', error.message);
+          throw error;
+        }
+        
+        // Wait a bit before retry
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      } else {
+        // Non-connection error, throw immediately
+        console.error('Database query error:', error.message);
+        console.error('Query:', text);
+        console.error('Params:', params);
+        throw error;
+      }
     }
-    
-    return res;
-  } catch (error) {
-    console.error('Database query error:', error.message);
-    console.error('Query:', text);
-    console.error('Params:', params);
-    throw error;
   }
 }
 

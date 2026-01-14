@@ -240,32 +240,61 @@ class AuthService {
     // Generate enrollment secret
     const enrollmentSecret = this._generateEnrollmentSecret();
 
+    // Determine OU based on role
+    // Admin -> OU=admin, Student -> OU=student
+    const ou = role === 'admin' ? 'admin' : 'student';
+
     // Register user with Fabric CA
     try {
-      console.log(`Registering ${username} with Fabric CA...`);
+      console.log(`Registering ${username} with Fabric CA (role=${role}, OU=${ou})...`);
       
       // Load admin identity from wallet using fabric-network Wallets API
       const wallet = await Wallets.newFileSystemWallet(authConfig.wallet.path);
-      const adminIdentity = await wallet.get('admin');
+      
+      // Try multiple admin identities (caadmin, admin, adminorg1, etc.)
+      const adminNames = ['admin', 'caadmin-org1msp', 'adminorg1', 'caadmin'];
+      let adminIdentity = null;
+      let adminName = null;
+      
+      for (const name of adminNames) {
+        adminIdentity = await wallet.get(name);
+        if (adminIdentity) {
+          adminName = name;
+          break;
+        }
+      }
       
       if (!adminIdentity) {
-        throw new Error('Admin identity not found. Please run: node enroll-admin.js');
+        throw new Error('Admin identity not found. Please run: node setup-admin.js');
       }
+
+      console.log(`Using admin identity: ${adminName}`);
 
       // Get admin User context from wallet provider
       const provider = wallet.getProviderRegistry().getProvider(adminIdentity.type);
-      const adminUser = await provider.getUserContext(adminIdentity, 'admin');
+      const adminUser = await provider.getUserContext(adminIdentity, adminName);
+
+      // Determine type for CA registration
+      // Type 'admin' for admin users, 'client' for students (CA type)
+      const caType = role === 'admin' ? 'admin' : 'client';
 
       // Register with CA using proper User instance
+      // Attributes include role for chaincode authorization
       await this.ca.register(
         {
           enrollmentID: username,
           enrollmentSecret: enrollmentSecret,
-          role: 'client',
+          role: caType, // CA type: admin or client
           affiliation: 'org1.department1',
           attrs: [
-            { name: 'role', value: role, ecert: true },
-            { name: 'studentId', value: studentId || username, ecert: true }
+            { name: 'role', value: role, ecert: true }, // Application role
+            { name: 'ou', value: ou, ecert: true }, // OU for chaincode checks
+            { name: 'studentId', value: studentId || username, ecert: true },
+            // Admin-specific attributes
+            ...(role === 'admin' ? [
+              { name: 'admin', value: 'true', ecert: true },
+              { name: 'hf.Registrar.Roles', value: 'client', ecert: true }
+            ] : [])
           ]
         },
         adminUser
@@ -282,11 +311,12 @@ class AuthService {
       }
     }
 
-    // Create user record
+    // Create user record with OU mapping
     const userRecord = {
       username,
       passwordHash,
-      role,
+      role, // Application role: admin, student, client
+      ou,   // Certificate OU: admin or client
       studentId: studentId || username, // Use provided studentId or fallback to username
       enrollmentSecret,
       enrolled: false,
@@ -441,11 +471,14 @@ class AuthService {
       const privateKey = enrollment.key.toBytes();
 
       // Create identity object with OU attribute
+      // OU mapping: admin -> 'admin', student -> 'student'
+      const ou = user.ou || (user.role === 'admin' ? 'admin' : 'student');
+      
       const identity = {
         certificate,
         privateKey,
         mspId: 'Org1MSP',
-        ou: user.role // Store OU directly to avoid parsing certificate
+        ou // Store mapped OU for chaincode authorization
       };
 
       // Store identity in wallet
@@ -455,7 +488,7 @@ class AuthService {
       const identityForStore = {
         type: 'X.509',
         mspId: 'Org1MSP',
-        ou: user.role,
+        ou, // Mapped OU: admin or client
         credentials: {
           certificate,
           privateKey
@@ -540,21 +573,29 @@ class AuthService {
     // Get OU from stored identity (no need to parse certificate)
     const ou = identity.ou || this.walletManager.extractOU(identity.credentials.certificate);
 
-    // Generate JWT token with user identity information
+    // Generate JWT access token with user identity information
     const tokenPayload = {
       username,
       mspId: identity.mspId,
       ou
     };
 
-    const token = jwt.sign(tokenPayload, this.jwtSecret, {
+    const accessToken = jwt.sign(tokenPayload, this.jwtSecret, {
       expiresIn: this.jwtExpiresIn,
       algorithm: authConfig.jwt.algorithm
     });
 
+    // Generate refresh token (longer expiry)
+    const refreshToken = jwt.sign(
+      { username, type: 'refresh' },
+      this.jwtSecret,
+      { expiresIn: '7d', algorithm: authConfig.jwt.algorithm }
+    );
+
     return {
       success: true,
-      token,
+      accessToken,
+      refreshToken,
       user: {
         username,
         mspId: identity.mspId,
@@ -564,6 +605,65 @@ class AuthService {
     };
   }
 
+  /**
+   * Refresh access token using refresh token
+   * @param {string} refreshToken - Refresh token
+   * @returns {Promise<Object>} New tokens
+   * @throws {Error} If refresh token invalid or expired
+   */
+  async refreshToken(refreshToken) {
+    // Verify refresh token
+    const decoded = jwt.verify(refreshToken, this.jwtSecret, {
+      algorithms: [authConfig.jwt.algorithm]
+    });
+
+    // Check if it's a refresh token
+    if (decoded.type !== 'refresh') {
+      throw new Error('Invalid refresh token type');
+    }
+
+    const username = decoded.username;
+
+    // Get user record
+    const user = await this._getUser(username);
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    // Load identity from wallet
+    const identity = await this.walletManager.getIdentity(username);
+    if (!identity) {
+      throw new Error('Identity not found');
+    }
+
+    // Get OU from stored identity
+    const ou = identity.ou || this.walletManager.extractOU(identity.credentials.certificate);
+
+    // Generate new access token
+    const tokenPayload = {
+      username,
+      mspId: identity.mspId,
+      ou
+    };
+
+    const newAccessToken = jwt.sign(tokenPayload, this.jwtSecret, {
+      expiresIn: this.jwtExpiresIn,
+      algorithm: authConfig.jwt.algorithm
+    });
+
+    // Generate new refresh token
+    const newRefreshToken = jwt.sign(
+      { username, type: 'refresh' },
+      this.jwtSecret,
+      { expiresIn: '7d', algorithm: authConfig.jwt.algorithm }
+    );
+
+    return {
+      success: true,
+      accessToken: newAccessToken,
+      refreshToken: newRefreshToken
+    };
+  }
 
   /**
    * Invalidate user session by adding token to blacklist

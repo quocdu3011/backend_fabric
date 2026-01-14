@@ -561,11 +561,19 @@ router.get('/transcripts/:studentId', authMiddleware, requireRole('admin', 'stud
     const { studentId } = req.params;
     const username = req.user ? req.user.username : null;
     
-    // Check if student is accessing their own transcript
-    if (req.user.role === 'student' && req.user.username !== studentId) {
-       // This check depends on how username maps to studentId. 
-       // Assuming username IS studentId for simplicity, or we need a mapping.
-       // For now, let's allow it if role is student, but in real app we need stricter check.
+    // AUTHORIZATION: Student can only access their own transcript
+    if (req.user.ou === 'student') {
+      // Get student's actual studentId from profile
+      const authService = getAuthService();
+      const userProfile = await authService.getUserProfile(req.user.username);
+      const userStudentId = userProfile ? userProfile.studentId : req.user.username;
+      
+      if (userStudentId !== studentId) {
+        return res.status(403).json({
+          success: false,
+          error: 'Access denied. Students can only access their own transcript.'
+        });
+      }
     }
 
     const result = await TranscriptService.getTranscript(studentId, username);
