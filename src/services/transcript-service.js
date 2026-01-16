@@ -189,10 +189,12 @@ async function addPrivateTranscript(transcriptData, username = null) {
     // This allows us to get the Transaction ID and handle Transient Data correctly
 
     // 1. Create Proposal
+    // NOTE: Don't specify endorsingOrganizations to let Gateway discover all required endorsers
+    // based on endorsement policy. The endorsement policy requires 2 orgs to endorse.
     const proposal = contract.newProposal('UpdateTranscript', {
       arguments: [studentId],
-      transientData: transientData,
-      endorsingOrganizations: [config.MSP_ID] // Explicitly target our org to protect transient data
+      transientData: transientData
+      // Removed endorsingOrganizations to let Gateway auto-discover endorsers
     });
 
     // 2. Get Transaction ID
